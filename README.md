@@ -1,6 +1,17 @@
 # work-releated
-my epam work
 
+learning path to virtual dom or react
 
+https://github.com/Matt-Esch/virtual-dom
 
-http://docs.brightcove.com/en/player/brightcove-player/getting-started/quick-start-bc-player.html
+http://www.ruanyifeng.com/blog/2015/02/future-of-dom.html
+
+https://segmentfault.com/u/danbai
+
+https://segmentfault.com/a/1190000004029168
+
+https://segmentfault.com/a/1190000007694388
+
+https://segmentfault.com/a/1190000005659033
+
+https://segmentfault.com/a/1190000011235844
