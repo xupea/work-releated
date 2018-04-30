@@ -352,6 +352,252 @@ delay(1000)
 
 注意：因为Promise一旦解决就是外部不可变的，现在可以安全地将该值传递给任何一方，并知道它不能被意外或恶意修改。 关于观察解决诺言的多方，这一点尤其如此。 一方不可能影响另一方遵守Promise解决方案的能力。 不变性可能听起来像是一个学术话题，但它实际上是Promise设计的最基本和最重要的方面之一，不应该随便传递。
 
+### 使用还是不使用Promise ###
+
+关于Promises的一个重要细节是确切地知道某个值是否是实际的Promises。 换句话说，这是一种会表现得像一个Promise？
+
+我们知道Promise是由new Promise（...）语法构造的，您可能认为Promise的instanceof将是一个有效的检查。好吧，不是。
+
+主要是因为您可以从另一个浏览器窗口（例如iframe）接收Promise值，该窗口具有与当前窗口或框架中的承诺不同的Promise，并且该检查无法识别Promise实例。
+
+此外，库或框架可能会选择出售自己的Promises，而不是使用原生ES6的Promise实施来实现。 事实上，你可能会在早期的浏览器中使用Promises和Promise来实现Promise。
+
+### 异常 ###
+如果在创建Promise或观察其解决方案的任何时候发生JavaScript异常错误（例如TypeError或ReferenceError），该异常将被捕获，并且它将强制有问题的Promise被拒绝。
+
+例如：
+```
+var p = new Promise(function(resolve, reject){
+    foo.bar();	  // `foo` 没有被定义, 所以会发出异常或错误
+    resolve(374); // 不会运行到这里 :(
+});
+
+p.then(
+    function fulfilled(){
+        // 不会运行到这里 :(
+    },
+    function rejected(err){
+        // `err` 是一个 `TypeError` 异常对象
+	// 异常发生在 `foo.bar()` 这一行.
+    }
+);
+```
+但是如果一个Promise被实现时，在observation期间（在一个then（...）注册的回调中）有一个JS异常错误会发生什么？ 即使它不会丢失，你可能会发现它们的处理方式有点令人惊讶。直到你深入一点：
+```
+var p = new Promise( function(resolve,reject){
+	resolve(374);
+});
+
+p.then(function fulfilled(message){
+    foo.bar();
+    console.log(message);   // 没有运行到这里
+},
+    function rejected(err){
+        // 没有运行到这里
+    }
+);
+```
+它看起来像来自foo.bar（）的异常真的被吞噬了。不过事实上并非如此。然而，有些更深层的事情发生了错误，但我们没有监听到。p.then（...）调用本身会返回另一个promise，这就是那个将被TypeError异常拒绝的promise
+
+### 处理未捕获的异常 ###
+还有其他的方法，很多人会说更好。
+
+一个常见的建议是Promise应该使用done（...），它们基本上将Promise链标记为“已完成”。done（...）不会创建并返回Promise，所以回调函数传递给done（..）显然没有连接到向不存在的链式承诺报告问题。
+
+它的处理方式与您在未捕获的错误情况中通常所期待的一样：done（..）里面的异常或错误，将作为全局未捕获错误引发（基本上在开发人员控制台中）：
+```
+var p = Promise.resolve(374);
+
+p.then(function fulfilled(msg){
+    // 数字是不会有字符串的处理函数
+    // 所以会抛出异常
+    console.log(msg.toLowerCase());
+})
+.done(null, function() {
+    // 如果异常在这里发生，它会全局抛出
+});
+```
+### ES8（ES2017）async/await ###
+JavaScript ES8(ES2017)引入了async/await，这使得使用Promises的工作更容易。我们将简要介绍async/await提供的可能性以及如何利用它们来编写异步代码。
+
+那么，让我们看看async/await如何工作。
+
+您可以使用async关键字声明定义一个异步函数。这样的函数返回一个AsyncFunction对象。 AsyncFunction对象表示执行该函数中包含的代码的异步函数。
+
+当一个异步函数被调用时，它返回一个Promise。当异步函数返回一个值时，这不是一个Promise，Promise将会自动创建，并且会使用函数返回的值来解析。当异步函数抛出异常时，Promise将被抛出的值拒绝。
+
+异步函数可以包含await表达式，暂停执行该函数并等待传递的Promise的解析，然后恢复异步函数的执行并返回解析后的值。
+
+您可以将JavaScript中的Promise等同于Java的Future或C＃的Task。
+
+async/await的目的是为了简化使用promises。
+我们来看看下面的例子：
+```
+// 标准的javascript函数
+function getNumber1() {
+    return Promise.resolve('374');
+}
+// 功能和getNumber相同
+async function getNumber2() {
+    return 374;
+}
+```
+同样，抛出异常的函数等价于返回已被reject的promise的函数：
+```
+function f1() {
+    return Promise.reject('Some error');
+}
+async function f2() {
+    throw 'Some error';
+}
+```
+await关键字只能用于异步功能，并允许您同步等待Promise。 如果我们在异步函数之外使用promise，我们仍然必须使用回调函数：
+```
+async function loadData() {
+    // `rp` is a request-promise function.
+    var promise1 = rp('https://api.example.com/endpoint1');
+    var promise2 = rp('https://api.example.com/endpoint2');
+   
+    // Currently, both requests are fired, concurrently and
+    // now we'll have to wait for them to finish
+    var response1 = await promise1;
+    var response2 = await promise2;
+    return response1 + ' ' + response2;
+}
+// Since, we're not in an `async function` anymore
+// we have to use `then`.
+loadData().then(() => console.log('Done'));
+```
+还可以使用“异步函数表达式”来定义异步函数。 异步函数表达式与异步函数语句非常相似，语法几乎相同。异步函数表达式和异步函数语句之间的主要区别在于函数名称，在异步函数表达式中可以省略这些名称以创建匿名函数。异步函数表达式可以用作IIFE（立即调用的函数表达式），只要定义它就立即运行。
+
+它看起来像这样：
+```
+var loadData = async function() {
+    // `rp` is a request-promise function.
+    var promise1 = rp('https://api.example.com/endpoint1');
+    var promise2 = rp('https://api.example.com/endpoint2');
+   
+    // Currently, both requests are fired, concurrently and
+    // now we'll have to wait for them to finish
+    var response1 = await promise1;
+    var response2 = await promise2;
+    return response1 + ' ' + response2;
+}
+```
+更重要的是，所有主流浏览器都支持async/await：
+
+工作一天结束时，重要的是不要盲目选择“最新”方法编写异步代码。理解异步JavaScript的内部特性至关重要，并深入了解所选方法的内部原理。与编程中的其他所有方法一样，每种方法都有优点和缺点。
+
+### 编写高度可维护，强壮的异步代码的5个技巧 ###
+1. 代码整洁：使用async/await可以减少你的代码体积，因为它可以略过一些不必要的步骤：.then链，处理结果的匿名函数和回调函数中定义结果变量
+```
+// `rp` is a request-promise function.
+rp(‘https://api.example.com/endpoint1').then(function(data) {
+ // …
+});
+```
+使用async/await之后：
+```
+// `rp` is a request-promise function.
+var response = await rp(‘https://api.example.com/endpoint1');
+```
+2. 错误处理：
+async/await使相同的代码结构来处理同步或异步的错误（或异常）称为可能，比如熟悉的try/catch语句，下面的例子使用Promises：
+```
+function loadData() {
+    try { // 捕获同步错误
+        getJSON().then(function(response) {
+            var parsed = JSON.parse(response);
+            console.log(parsed);
+        }).catch(function(e) { // 捕获异步错误
+            console.log(e); 
+        });
+    } catch(e) {
+        console.log(e);
+    }
+}
+```
+使用async/await之后：
+```
+async function loadData() {
+    try {
+        var data = JSON.parse(await getJSON());
+        console.log(data);
+    } catch(e) {
+        console.log(e);
+    }
+}
+```
+3. 使用条件：使用条件式代码结合async/await更加简单
+```
+function loadData() {
+  return getJSON()
+    .then(function(response) {
+      if (response.needsAnotherRequest) {
+        return makeAnotherRequest(response)
+          .then(function(anotherResponse) {
+            console.log(anotherResponse)
+            return anotherResponse
+          })
+      } else {
+        console.log(response)
+        return response
+      }
+    })
+}
+```
+使用async/await之后：
+```
+async function loadData() {
+  var response = await getJSON();
+  if (response.needsAnotherRequest) {
+    var anotherResponse = await makeAnotherRequest(response);
+    console.log(anotherResponse)
+    return anotherResponse
+  } else {
+    console.log(response);
+    return response;    
+  }
+}
+```
+4. 堆栈帧：
+使用promise链，很难定位错误发生的位置：
+```
+function loadData() {
+  return callAPromise()
+    .then(callback1)
+    .then(callback2)
+    .then(callback3)
+    .then(() => {
+      throw new Error("boom");
+    })
+}
+loadData()
+  .catch(function(e) {
+    console.log(err);
+// Error: boom at callAPromise.then.then.then.then (index.js:8:13)
+});
+```
+使用async/await之后：
+```
+async function loadData() {
+  await callAPromise1()
+  await callAPromise2()
+  await callAPromise3()
+  await callAPromise4()
+  await callAPromise5()
+  throw new Error("boom");
+}
+loadData()
+  .catch(function(e) {
+    console.log(err);
+    // output
+    // Error: boom at loadData (index.js:7:9)
+});
+```
+5. 调试：如果你使用过promises，你知道调试它们是一场噩梦。例如，如果您在.then块内设置断点并使用调试快捷方式（如“step over”），则调试器将不会移动到以下位置，因为它仅通过同步代码“执行”。
+通过异步/等待，您可以完全按照正常的同步功能一步一步地调试。
+
   [1]: /img/bVYtHf
   [2]: /img/bVYFJ9
   [3]: /img/bVYGuz
