@@ -1,0 +1,374 @@
+### 为什么只有一个线程是一个限制？###
+第一篇文章中，我们分析了如果在Call Stack中调用耗时长的函数，会产生很多问题。
+
+想象一下，一个复杂图像转换算法在浏览器中运行。
+
+当Call Stack有函数需要执行的时候，浏览器是无法执行其他任何操作的 - 没错它被阻塞了。这意味着浏览器无法渲染页面，也不能运行任何其他代码，它只是卡住了。问题来了 - 您的应用用户界面不再高效和令人满意。
+
+在某些情况下，这可能不是至关重要的问题。但是，它可能引起一个更大的问题。一旦您的浏览器开始处理Call Stack中的太多任务，它可能会停止响应很长时间。很多浏览器会弹出错误处理窗口，询问他们是否应该终止该页面，这很丑陋，它完全毁了你的用户体验：
+![no_response][1]
+
+### JavaScript程序的构建块 ###
+您可能会把所有JavaScript代码写入一个.js文件，但是你的代码几乎肯定由几个块组成，其中只有一个将立即执行，其余的将在稍后执行。最常见的块单位是函数。
+
+大多数新开发JavaScript的开发者似乎都有这样的理解，即以后不一定会严格地立即发生。 换句话说，根据定义，现在无法完成的任务将异步完成，这意味着您不会出现上述阻止行为，因为您可能已经潜意识地预期或期望。
+
+我们来看看下面的例子：
+```
+// ajax(..) 是由其它工具库提供的函数
+var response = ajax('https://example.com/api');
+
+console.log(response);
+// `response` 不会有解决
+```
+您可能知道标准的Ajax请求是不会同步完成的，这意味着在代码执行时，ajax（..）函数还没有任何值返回以分配给response变量。
+
+一个简单实现“等待”异步函数返回结果的方法就是callback的函数：
+```
+ajax('https://example.com/api', function(response) {
+    console.log(response); // `response` 有值了
+});
+```
+请注意：您实际上可以创建同步的Ajax请求。但是永远不要这样做，如果您发出同步Ajax请求，您的JavaScript应用的用户界面将被阻塞 - 用户将无法点击，或输入数据，导航或滚动。这将阻止任何用户交互。没错这是一个可怕的做法。
+
+同步ajax请求代码如下，但请不要这样做：
+```
+// 假设你是用jquery库
+jQuery.ajax({
+    url: 'https://api.example.com/endpoint',
+    success: function(response) {
+        // 你的回调函数
+    },
+    async: false // 坏主意
+});
+```
+Ajax请求只是其中一个例子。你可以让任何代码块异步执行。
+
+这个可以通过setTimeout（回调，毫秒）函数来完成。setTimeout函数的作用是设置一个事件（超时）过一段时间再执行。 让我们来看看：
+```
+function first() {
+    console.log('first');
+}
+function second() {
+    console.log('second');
+}
+function third() {
+    console.log('third');
+}
+first();
+setTimeout(second, 1000); // Invoke `second` after 1000ms
+third();
+```
+输出如下：
+```
+first
+third
+second
+```
+### 解剖事件循环 ###
+尽管允许异步JavaScript代码（如我们刚才讨论的setTimeout），但直到ES6，JavaScript本身实际上从来没有内置任何异步的直接概念，但我们将从一个有点奇怪的说法开始。 JavaScript引擎从来没有做过比在任何特定时刻执行单个程序块更多的事情。
+
+有关JavaScript引擎如何工作的（特别是Google的V8），请查看本系列第三篇文章。
+
+那么，谁告诉JS引擎来执行你的程序块？实际上，JS引擎并不是孤立运行的 - 它运行在一个托管环境中，对于大多数开发人员来说，它是Web浏览器或Node.js。事实上，现在，JavaScript被嵌入到各种设备中，从机器人到灯泡。每个设备都代表JS Engine的不同类型的托管环境。
+
+所有环境中的共同点是一种称为事件循环的内置机制，它随着时间的推移处理程序中多个代码块的执行，每次调用JS引擎。
+
+这意味着JS引擎只是JS代码的按需执行环境。它是调度事件（JS代码执行）的周围环境。
+
+例如，当您的JavaScript程序发出Ajax请求，想要从服务器获取一些数据时，您可以在函数中设置“响应”代码（“回调”），并且JS引擎会告诉主机环境：
+“嘿，我现在暂停执行，但每当你完成这个网络请求，并且你有一些数据，请执行这个函数。”
+
+然后设置浏览器来侦听来自网络的响应，当它返回给您时，它将通过将回调函数插入到事件循环中来安排执行回调函数。
+
+我们来看下面的图表：
+![event_loop_callstack][2]
+
+您可以在本系列第一篇文章中阅读关于内存堆和调用堆栈的更多信息。
+
+这些Web API是什么？从本质上讲，它们是你无法访问的线程，你可以对它们进行调用。它们是浏览器并发功能的一部分。如果您是Node.js开发人员，那么这些是C++ API。
+
+那么究竟是什么事件循环呢？
+![event_loop][3]
+
+时间循环只有一个简单的工作 - 监视Call Stack（调用堆栈）和Callback Queue（回调队列）。如果调用堆栈为空，它将从队列中取出第一个事件并将其推送到调用堆栈，该调用堆栈可以有效地运行它。
+
+这种迭代在事件循环中称为勾号。 每个事件只是一个函数回调。
+```
+console.log('Hi');
+setTimeout(function cb1() { 
+    console.log('cb1');
+}, 5000);
+console.log('Bye');
+```
+让我们“执行”这段代码，看看会发生什么：
+1. 状态很清楚。浏览器控制台已清除，并且调用堆栈为空
+    ![step1][4]
+2. console.log('Hi')被添加到Call Stack
+    ![step2][5]
+3. 执行console.log('Hi')
+    ![step3][6]
+4. 从Call Stack中移除console.log('Hi')
+    ![step4][7]
+5. setTimeout(function cb1() { ... })被添加到Call Stack
+    ![step5][8]
+6. 执行setTimeout(function cb1() { ... })，浏览器将创建一个计时器作为Web API的一部分。 它将为您处理倒计时
+    ![step6][9]
+7. setTimeout(function cb1() { ... })自身执行结束，然后从Call Stack中移除
+    ![step7][10]
+8. console.log('Bye')被添加到Call Stack
+    ![step8][11]
+9. 执行console.log('Bye')
+    ![step9][12]
+10. 从Call Stack中移除执行console.log('Bye')
+    ![step10][13]
+11. 至少5000毫秒后，定时器完成并将cb1回调函数推送到Callback队列中。
+    ![step11][14]
+12. 事件循环从回调队列中获取cb1并将其推送到调用堆栈。
+    ![step12][15]
+13. cb1执行，添加console.log('cb1')到调用堆栈
+    ![step13][16]
+14. console.log('cb1')执行
+    ![step14][17]
+15. console.log('cb1')从调用堆栈中移除
+    ![step15][18]
+16. cb1从调用堆栈中移除
+    ![step16][19]
+
+扼要重述：
+![recap][20]
+
+有趣的是，ES6指定了事件循环应该如何工作，这意味着它在JS引擎的职责范围内，而不再只是属于一个托管环境。这种变化的一个主要原因是在ES6中引入了Promises，因为后者需要对事件循环队列上的调度操作进行直接，细粒度的控制（我们稍后会更详细地讨论它们）。
+
+### setTimeout(…)如何工作 ###
+请注意，setTimeout（...）不会自动将您的回调函数放到事件循环队列中。它设置了一个计时器，当计时器到期时，环境将您的回调函数放入事件循环中，以便将来的某个tick事件会将其选中并执行它。查看此代码：
+```
+setTimeout(myCallback, 1000);
+```
+这并不意味着myCallback将在1000ms之后马上执行，而是在1000ms之后，myCallback将被添加到队列中。但是队列中可能还有其他事件先前已添加 - 您的回调将不得不等待。
+
+有很多关于开始使用JavaScript中的异步代码的文章和教程，其中提到了setTimeout（callback，0）。 那么，现在你知道Event Loop的作用了，以及setTimeout如何工作：使用0作为第二个参数调用setTimeout只是推迟回调函数执行，直到调用堆栈清空才执行。
+
+看看下面的代码：
+```
+console.log('Hi');
+setTimeout(function() {
+    console.log('callback');
+}, 0);
+console.log('Bye');
+```
+虽然等待时间设置为0 ms，但浏览器控制台中的结果如下所示：
+```
+Hi
+Bye
+callback
+```
+### ES6中的Jobs？ ###
+ES6中引入了一个名为“Job队列”的新概念。它是Event Loop队列顶部的一个图层。在处理Promises的异步行为时，您最有可能接触到它（我们也将讨论它们）。
+
+现在我们将简单介绍这个概念，以便在我们稍后讨论Promise的异步行为时，您将了解如何安排和处理这些操作。
+
+想象一下：Job队列是一个连接到事件循环队列中每个tick的末尾的队列。在事件循环的tick期间可能发生的某些异步操作不会导致将全新的事件添加到事件循环队列中，而是会将一个项（又名Job）添加到当前tick的Job队列的末尾。
+
+这意味着您可以添加其他功能以便稍后执行，您可以放心，它将在执行任何其他操作之前立即执行。
+
+Job还可以使更多作业添加到同一队列的末尾。从理论上讲，作业“循环”（一个不停地添加其他作业等的作业）可能会无限地旋转，从而导致需要进入下一个事件循环节点所需的必要资源的程序不足。从概念上讲，这与在代码中仅表示长时间运行或无限循环（如while（true）..）类似。
+
+作业有点像setTimeout（回调，0）“破解”，但实现的方式是它们引入了一个更加明确和有保证的排序：稍后，但尽快。
+
+### 回调 ###
+如您所知，回调是迄今为止在JavaScript程序中表达和管理异步的最常见方式。事实上，回调是JavaScript语言中最基本的异步模式。无数的JS程序，甚至是非常复杂和复杂的程序，都是在没有其他异步基础的情况下编写的，而不是回调。
+
+除了回调不具有缺点。许多开发人员正试图找到更好的异步模式。然而，如果你不了解底层实际情况，那么有效地使用任何抽象概念是不可能的。
+
+在下一章中，我们将深入探索这些抽象概念，以说明为什么更复杂的异步模式是必要的甚至是推荐的（将在后续的帖子中讨论）。
+
+### 嵌套的回调 ###
+看下面的代码：
+```
+listen('click', function (e){
+    setTimeout(function(){
+        ajax('https://api.example.com/endpoint', function (text){
+            if (text == "hello") {
+	            doSomething();
+	        }
+	        else if (text == "world") {
+	            doSomethingElse();
+            }
+       });
+    }, 500);
+});
+```
+我们有一个嵌套在一起的三个函数，每个函数代表一个异步过程。
+
+这种代码通常被称为“回调地狱”。但“回拨地狱”实际上与嵌套/缩进几乎没有任何关系。这是一个比这更深的问题。
+
+首先，我们正在等待“click”事件，然后等待计时器开始工作，然后等待Ajax响应返回，此时它可能会再次重复。
+
+乍一看，这段代码看起来可以将其异步映射为连续的步骤：
+```
+listen('click', function (e) {
+	// ..
+});
+```
+之后：
+```
+setTimeout(function(){
+    // ..
+}, 500);
+```
+最后：
+```
+if (text == "hello") {
+    doSomething();
+}
+else if (text == "world") {
+    doSomethingElse();
+}
+```
+因此，表达异步代码的这种顺序方式似乎更加自然，不是吗？ 一定有这样的方式吧？
+### Promises ###
+看看下面的代码：
+```
+var x = 1;
+var y = 2;
+console.log(x + y);
+```
+它非常简单：它将x和y的值相加并打印到控制台。但是，如果x或y的值需要异步返回，该怎么办？比方说，我们需要从服务器中检索x和y的值，然后才能在表达式中使用它们。假设我们有一个函数loadX和loadY，分别从服务器加载x和y的值。然后，想象一下，我们有一个函数sum，返回x加y的值。
+
+它可能看起来像这样（相当丑陋）：
+```
+function sum(getX, getY, callback) {
+    var x, y;
+    getX(function(result) {
+        x = result;
+        if (y !== undefined) {
+            callback(x + y);
+        }
+    });
+    getY(function(result) {
+        y = result;
+        if (x !== undefined) {
+            callback(x + y);
+        }
+    });
+}
+// 一个同步或异步函数返回x的值
+function fetchX() {
+    // ..
+}
+
+
+// 一个同步或异步函数返回y的值
+function fetchY() {
+    // ..
+}
+sum(fetchX, fetchY, function(result) {
+    console.log(result);
+});
+```
+这里有一些非常重要的东西 - 在这个代码中，我们将x和y作为未来值，并且我们表达了一个操作和（...）（从外部）不关心x或y或者两者是否都不可用 马上。
+
+当然，这种基于简单回调的方法还有很多不足之处。这只是为了解feature values的好处的第一步，而不必担心它们何时可用。
+
+### Promises的值 ###
+让我们简要地看一下我们如何用Promises来表达x + y示例：
+```
+function sum(xPromise, yPromise) {
+	// `Promise.all([ .. ])` 接受 promises 数组,
+	// 返回一个新的promise，这个promise会等待所有promise数组完成
+	return Promise.all([xPromise, yPromise])
+
+	// Promise.all被resolved之后, 我们将返回的X和Y相加
+	.then(function(values){
+		// `values` 是之前promises数组中每个promise解决之后的信息组成的数组
+		return values[0] + values[1];
+	} );
+}
+
+// `fetchX()` and `fetchY()` 返回promise，promise包含各自的值
+// 这个值可能可用也可能不可用
+sum(fetchX(), fetchY())
+
+// 我们最终得到一个promise，它返回了两个数字的和
+// 调用 `then(...)` 得到最终值
+.then(function(sum){
+    console.log(sum);
+});
+```
+在这个片段中有两层Promise。
+
+直接调用fetchX（）和fetchY（），并将它们返回的值（promise！）传递给sum（...）。这些承诺所代表的基础价值可能现在已经准备就绪，但是每个承诺都将其行为规范化为无论如何都是相同的。我们以时间无关的方式推测x和y值。他们是未来的价值观，期限。
+
+第二层是sum（...）创建的承诺
+（通过Promise.all（[...]））和返回，我们通过调用然后等待（...）。总和（...）操作完成后，我们的总和未来值已准备好，我们可以将其打印出来。我们隐藏了等待sum（...）中x和y未来值的逻辑。
+
+注意：Inside sum（...）中，Promise.all（[...]）调用创建一个承诺（等待promiseX并promiseY解析）。然后（...）的链接调用创建了另一个承诺，即返回
+值[0] +值[1]行立即解决（与加法的结果）。因此，我们连接sum（...）调用结束时的then（...）调用 - 在片段结尾处 - 实际上是在返回的第二个promise上运行，而不是由Promise创建的第一个promise。全部（[...]）。另外，虽然我们并没有把时间的尾端连接起来（...），但是如果我们选择观察/使用它，它也创造了另一个承诺。本章后面将详细解释这个Promise链接的东西。
+
+有了Promises，那么（...）调用实际上可以采用两个函数，第一个用于履行（如前所示），第二个用于拒绝：
+```
+sum(fetchX(), fetchY())
+.then(
+    // fullfillment handler
+    function(sum) {
+        console.log( sum );
+    },
+    // rejection handler
+    function(err) {
+    	console.error( err ); // bummer!
+    }
+);
+```
+如果在获取x或y时出现问题，或者在添加期间某种方式失败了，那么sum（...）返回的promise将被拒绝，并且传递给then（...）的第二个回调错误处理程序将收到拒绝 来自诺言的价值。
+
+由于Promises封装了时间依赖状态 - 等待基础价值的实现或拒绝 - 从外部看，Promise本身是时间无关的，因此Promises可以以可预测的方式组合（组合），而不管时间或结果如何 下。
+
+而且，一旦一个承诺解决了，它就会永远保持这种状态 - 它在那个时候成为一个不变的价值 - 然后可以根据需要多次观察。
+
+确实可以链接承诺是非常有用的：
+```
+function delay(time) {
+    return new Promise(function(resolve, reject){
+        setTimeout(resolve, time);
+    });
+}
+
+delay(1000)
+.then(function(){
+    console.log("after 1000ms");
+    return delay(2000);
+})
+.then(function(){
+    console.log("after another 2000ms");
+})
+.then(function(){
+    console.log("step 4 (next Job)");
+    return delay(5000);
+})
+// ...
+```
+呼叫延迟（2000）创建了一个将在2000ms完成的承诺，然后我们从第一个（...）履行回调中返回，这导致第二个（...）的承诺等待2000ms的承诺。
+
+注意：因为Promise一旦解决就是外部不可变的，现在可以安全地将该值传递给任何一方，并知道它不能被意外或恶意修改。 关于观察解决诺言的多方，这一点尤其如此。 一方不可能影响另一方遵守Promise解决方案的能力。 不变性可能听起来像是一个学术话题，但它实际上是Promise设计的最基本和最重要的方面之一，不应该随便传递。
+
+  [1]: /img/bVYtHf
+  [2]: /img/bVYFJ9
+  [3]: /img/bVYGuz
+  [4]: /img/bVYGx0
+  [5]: /img/bVYGyg
+  [6]: /img/bVYGyq
+  [7]: /img/bVYGyP
+  [8]: /img/bVYGyV
+  [9]: /img/bVYGzg
+  [10]: /img/bVYGzz
+  [11]: /img/bVYGz8
+  [12]: /img/bVYJIk
+  [13]: /img/bVYJID
+  [14]: /img/bVYJJg
+  [15]: /img/bVYJKd
+  [16]: /img/bVYJK1
+  [17]: /img/bVYJLn
+  [18]: /img/bVYJLK
+  [19]: /img/bVYJLZ
+  [20]: /img/bVYJMF
