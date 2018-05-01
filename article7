@@ -1,80 +1,115 @@
-您可能已经知道，渐进式Web应用只会越来越受欢迎，因为它们旨在使Web应用用户体验更加流畅，创建本机应用程序般的体验，而不是浏览器的外观和感觉。
+您可能已经知道，渐进式Web应用(PWA)会越来越受欢迎，因为它们旨在使Web应用的用户体验更加流畅，创建Native应用程序般的体验，而不只是运行在浏览器的应用。
 
-构建渐进式Web应用程序的主要要求之一是使其在网络和加载方面非常可靠 - 它应该可用于不确定或不存在的网络条件。
+构建渐进式Web应用程序的主要原因之一是使应用在网络和加载方面非常可靠 - 它应该可用于不确定或不存在的网络条件。
 
-在这篇文章中，我们将深入探讨服务工作者：他们如何运作以及您应该关心什么。最后，我们还列出了您应该利用的服务工作者的一些独特优势，并在SessionStack中分享我们自己团队的经验。
+在这篇文章中，我们将深入探讨Service Worker：他们如何运作以及应该注意的地方。最后，我们还列出了您应该利用的Service Workers的一些独特优势。
 
-概观
-如果你想了解关于服务人员的一切，你应该首先阅读我们在Web Workers上的博客文章。
+### 概述 ###
+如果你想了解关于Service Workers的一切，你应该首先阅读本系列第几篇文章。
 
-基本上，服务工作者是一种网络工作者，更具体地说，它就像一个共享工作者：
+基本上，Service Worker是一种网络工作者，更具体地说，它就像一个Shared Worker：
 
-Service Worker在它自己的全局脚本上下文中运行
-它没有绑定到特定的网页
-它无法访问DOM
+- Service Worker在它自己的全局脚本上下文中运行
+- 它没有绑定到特定的网页
+- 它无法访问DOM
+
 Service Worker API令人兴奋的主要原因之一是它可以让你的网络应用程序支持离线体验，从而使开发人员能够完全控制流程。
 
-服务工作者的生命周期
-服务人员的生命周期与您的网页完全分开。它由以下几个阶段组成：
+### Service Worker 的生命周期 ###
+Service Worker生命周期与您的网页是完全分开。它由以下几个阶段组成：
 
 - 下载
 - 安装
 - 激活
+
 ### 下载 ###
 这是浏览器下载包含Service Worker的.js文件的时候。
 
-安装
-要为您的Web应用程序安装Service Worker，您必须先注册它，您可以在JavaScript代码中进行注册。当注册服务工作者时，它会提示浏览器在后台启动服务工作者安装步骤。
+### 安装 ###
+您的Web应用程序想要安装Service Worker，您必须先注册它，您可以在JavaScript代码中进行注册。当Service Worker被注册时，它会提示浏览器在后台启动Service Worker安装步骤。
 
-通过注册服务工作者，你可以告诉浏览器你的服务工作者JavaScript文件在哪里。我们来看下面的代码：
+通过注册Service Worker，你可以告诉浏览器你的Service Worker的JavaScript文件在哪里。我们来看下面的代码：
 ```
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('/sw.js').then(function(registration) {
-      // Registration was successful
-      console.log('ServiceWorker registration successful');
+      // 注册成功
+      console.log('ServiceWorker registration successful');
     }, function(err) {
-      // Registration failed
-      console.log('ServiceWorker registration failed: ', err);
+      // 注册失败
+      console.log('ServiceWorker registration failed: ', err);
     });
   });
 }
 ```
-该代码检查当前环境中是否支持Service Worker API。如果是，则注册/sw.js服务工作者。
+该代码检查当前环境中是否支持Service Worker API。如果支持，则注册/sw.js Service Worker。
 
-您可以在每次加载页面时调用register（）方法而不用担心 - 浏览器会判断服务工作者是否已经注册，并且会正确处理。
+您可以在每次加载页面时调用register（）方法而不用担心 - 浏览器会判断Service Worker是否已经注册，并且会正确处理。
 
-register（）方法的一个重要细节是服务工作者文件的位置。在这种情况下，您可以看到服务工作者文件位于域的根目录。这意味着服务人员的范围将是整个来源。换句话说，这个服务工作者将会收到这个域的所有东西的提取事件（我们将在后面讨论）。如果我们在/example/sw.js注册服务工作者文件，那么服务工作者将只能看到URL以/ example /（即/ example / page1 /，/ example / page2 /）开头的页面的提取事件。
+register（）方法的一个重要细节是Service Worker文件的位置。在这种情况下，您可以看到服务工作者文件位于域的根目录。这意味着Service Worker的范围将是整个来源。换句话说，这个Service Worker将会收到这个域的所有东西的fetch事件（我们将在后面讨论）。如果我们在/example/sw.js注册Service Worker文件，那么服务工作者将只能看到URL以/example/（即/example/page1/，/example/page2/）开头的页面的fetch事件。
 
-在安装阶段，最好加载和缓存一些静态资产。资产成功缓存后，Service Worker安装完成。如果没有（加载失败） - 服务人员将重试。一旦安装成功，您将知道静态资产位于缓存中。
+在安装阶段，最好加载和缓存一些静态资源。资源成功缓存后，Service Worker安装完成。如果没有成功（加载失败） - Service Worker将重试。一旦安装成功，您将知道静态资源位于缓存中。
+在安装阶段，最好加载和缓存一些静态资源。资源成功缓存后，Service Worker安装完成。如果没有成功（加载失败） - Service将重试。一旦安装成功，您将知道静态资产位于缓存中。
 
 如果注册需要在加载事件之后发生，这将回答您的问题。这不是必须的，但它是绝对推荐的。
 
-为什么这样？让我们考虑用户第一次访问您的网络应用程序。目前还没有服务人员，浏览器无法事先知道是否会有最终安装的服务人员。如果安装了Service Worker，则浏览器需要为这个额外的线程花费额外的CPU和内存，否则浏览器将花费在渲染网页上。
+为什么这样？让我们考虑用户第一次访问您的网络应用程序。目前还没有Service Worker，浏览器无法事先知道是否会有安装的Service Worker。如果安装了Service Worker，则浏览器需要为这个额外的线程花费额外的CPU和内存，否则浏览器将花费在渲染网页上。
 
-最重要的是，如果你只是在你的页面上安装一个服务工作者，你可能会延迟加载和渲染的风险 - 而不是尽快让你的用户可以使用这个页面。
+最重要的是，如果你只是在你的页面上安装一个Service Worker，你可能会有延迟加载和渲染的风险 - 而不是尽快让你的用户可以使用这个页面。
 
-请注意，这仅在第一次访问页面时很重要。后续页面访问不受Service Worker安装的影响。一旦在第一次访问页面时激活服务工作者，它可以处理加载/缓存事件，以便随后访问您的Web应用程序。这一切都是有道理的，因为它需要准备好处理有限的网络连接。
+请注意，这仅在第一次访问页面时才显得重要。后续页面访问不受Service Worker安装的影响。一旦在第一次访问页面时激活Service Worker，它可以处理加载/缓存事件，以便随后访问您的Web应用程序。这一切都是有道理的，因为它需要准备好处理有限的网络连接。
 
-激活
-安装Service Worker之后，下一步将是其激活。这一步是管理以前缓存的好机会。
+### 激活 ###
+安装Service Worker之后，下一步是将其激活。这一步是管理以前缓存的好机会。
 
-一旦激活，服务人员将开始控制所有属于其范围的页面。一个有趣的事实是：首次注册服务工作者的页面将不会被控制，直到该页面再次被加载。一旦服务工作者处于控制之下，它将处于以下状态之一：
+一旦激活，Service Worker将开始控制所有属于其范围的页面。一个有趣的事实是：首次注册Service Worker的页面将不会被控制，直到该页面再次被加载。一旦处于Service Worker控制之下，它将处于以下状态之一：
 
-它将处理从页面发出网络请求或消息时发生的提取和消息事件
-它将被终止以节省内存
+- 它将处理从页面发出网络请求或消息时发生的fetch和message事件
+- 它将被终止以节省内存
+
 以下是生命周期的外观：
 
-### 处理Service Worker内部的安装 ###
-在页面加速注册过程之后，让我们看看Service Worker脚本中发生了什么，它通过向Service Worker实例添加事件侦听器来处理安装事件。
+### 在ervice Worker内部处理安装 ###
+在页面加速注册过程之后，让我们看看Service Worker脚本中发生了什么，它通过向Service Worker实例添加事件侦听器来处理install事件。
 
-这些是安装事件处理时需要采取的步骤：
+这些是install事件处理时需要采取的步骤：
 
-打开缓存
-缓存我们的文件
-确认是否缓存了所有必需的资产
-这是一个简单的安装可能看起来像一个服务工作者内
+- 打开缓存
+- 缓存我们的文件
+- 确认是否缓存了所有必需的资源
 
+这是一个简单的install在Service Worker内：
+```
+var CACHE_NAME = 'my-web-app-cache';
+var urlsToCache = [
+  '/',
+  '/styles/main.css',
+  '/scripts/app.js',
+  '/scripts/lib.js'
+];
+
+self.addEventListener('install', function(event) {
+  // event.waitUntil takes a promise to know how
+  // long the installation takes, and whether it 
+  // succeeded or not.
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(function(cache) {
+        console.log('Opened cache');
+        return cache.addAll(urlsToCache);
+      })
+  );
+});
+```
+如果所有文件成功被缓存，Service Worker会被安装。如果任何文件下载失败，install步骤会失败。所以主要注意你需要缓存的文件。
+
+处理install事件是可选的，你可以避免处理它。在这种情况下，上面三个步骤你都无需处理。
+
+### 在运行时缓存请求 ###
+这部分是关键所在。这里您将看到如何拦截请求并返回创建的缓存（并创建新缓存）。
+
+安装Service Worker并且用户导航到另一个页面或刷新他所在的页面后，Service Worker将收到fetch事件。下面是一个演示如何返回缓存资源或执行新请求然后缓存结果的示例：
+```
 self.addEventListener('fetch', function(event) {
   event.respondWith(
     // This method looks at the request and
@@ -122,28 +157,30 @@ self.addEventListener('fetch', function(event) {
     );
 });
 ```
-简而言之，这就是发生的事情：
 
-event.respondWith（）将决定我们如何响应提取事件。我们传递了一个来自caches.match（）的承诺，它查看请求并发现是否有任何已创建的缓存的缓存结果。
-如果存在缓存，则检索响应。
-否则，将执行提取。
-检查状态是否为200.我们还检查响应类型是否基本，这表明它是来自我们原点的请求。在这种情况下，不会缓存对第三方资产的请求。
-响应被添加到缓存中。
-请求和响应必须被克隆，因为它们是流。流的主体只能被使用一次。而且由于我们想要使用它们，我们想克隆它们，因为浏览器也必须使用它们。
+简而言之，这就是发生的过程：
 
-更新服务工作者
+- event.respondWith（）将决定我们如何响应fetch事件。我们传递了一个来自caches.match（）的promise，它查看请求并发现是否有任何已创建的缓存的缓存结果。
+- 如果存在缓存，则返回结果。
+- 否则，将执行fetch事件。
+- 检查状态是否为200。我们还检查响应类型是否basic，这表明它是来自我们origin的请求。在这种情况下，不会缓存对第三方资源的请求。
+- 响应结果被添加到缓存中。
+
+请求和响应必须被克隆，因为它们是流。流的主体只能被使用一次。而且由于我们想要使用它们，浏览器也要使用它们，所以必需克隆它们。
+
+### 更新服务工作者 ###
 当用户访问您的Web应用程序时，浏览器会尝试重新下载包含Service Worker代码的.js文件。这发生在后台。
 
-如果与当前服务工作者的文件相比，现在下载的服务工作者文件中甚至存在单字节差异，则浏览器将假定有改变并且必须启动新的服务工作者。
+如果与当前Service Worker的文件相比，现在下载的Service Worker文件中甚至存在单字节差异，则浏览器将假定有改变并且必须启动新的Service Worker。
 
-新的Service Worker将启动并且安装事件将被解雇。然而，在这一点上，旧的服务工作者仍在控制你的网络应用程序的页面，这意味着新的服务工作者将进入等待状态。
+新的Service Worker将启动并且install事件将被触发。然而，在这一点上，旧的Service Worker仍在控制你的网络应用程序的页面，这意味着新的Service Worker将进入waiting状态。
 
-一旦您的Web应用程序当前打开的页面关闭，旧的Service Worker将被浏览器终止，新安装的Service Worker将完全控制。这是当它的激活事件将被解雇。
+一旦您的Web应用程序当前打开的页面关闭，旧的Service Worker将被浏览器终止，新安装的Service Worker将完全控制。这是当它的激活事件将被触发。
 
 为什么需要这些？为了避免两个版本的Web应用程序同时运行在不同的选项卡上 - 这在网络上实际上非常常见，并且可能会创建非常糟糕的错误（例如，在浏览器中存储数据时存在不同模式的情况）。
 
-从缓存中删除数据
-激活回调中最常见的步骤是缓存管理。你现在要这样做，因为如果你在安装步骤中删除了所有旧的缓存，旧的Service Workers将突然停止提供缓存中的文件。
+### 从缓存中删除数据 ###
+activate回调中最常见的步骤是缓存管理。你现在要这样做，因为如果你在安装步骤中删除了所有旧的缓存，旧的Service Workers将突然停止提供缓存中的文件。
 
 下面是一个示例，您可以从缓存中删除某些未列入白名单的文件（在这种情况下，其名称中包含page-1或page-2）：
 ```
@@ -168,33 +205,21 @@ self.addEventListener('activate', function(event) {
   );
 });
 ```
-HTTPS要求
-在构建Web应用程序时，您可以通过本地主机使用服务人员，但是一旦将其部署到生产环境中，则需要准备好HTTPS（这是您拥有HTTPS的最后一个原因）。
+### HTTPS要求 ###
+在构建Web应用程序时，您可以通过本地主机使用Service Worker，但是一旦将其部署到生产环境中，则需要准备好HTTPS（这是您拥有HTTPS的最后一个原因）。
 
-使用服务人员，您可以劫持连接并制作响应。 通过不使用HTTPs，您的Web应用程序变得容易受到中间人攻击。
+使用Service Worker，您可以劫持连接并制作响应。 通过不使用HTTPs，您的Web应用程序变得容易受到攻击。
 
-为了让事情更安全，您需要在通过HTTPS提供的页面上注册服务人员，以便您知道浏览器接收的服务工作人员在通过网络旅行时未被修改。
+为了让事情更安全，您需要在通过HTTPS提供的页面上注册Service Worker，以便您知道浏览器接收的Service Worker在通过网络中未被修改。
 
-浏览器支持
+### 浏览器支持 ###
 服务人员的浏览器支持正在变得越来越好：
 
-服务人员正在打开大功能的大门
-服务工作者提供的一些独特功能是：
+### Service Worker应用场景 ###
+Service Worker提供的一些独特功能是：
 
 - 推送通知 - 允许用户选择从网络应用程序及时更新。
 - 后台同步 - 允许您推迟操作，直到用户具有稳定的连接。这样，您可以确保无论用户想要发送什么，实际上都会发送。
-- 定期同步（将来） - 提供管理定期后台同步功能的API。
-- Geofencing（未来） - 您可以定义参数，也称为围绕感兴趣区域的地理围栏。当设备跨越地理围栏时，Web应用程序会收到通知，这可以让您根据用户的地理位置提供有用的体验。
-这些将在本系列未来的博客文章中详细讨论。
-
-我们一直致力于使SessionStack的UX尽可能流畅，优化页面加载和响应时间。
-
-当您在SessionStack中重放用户会话（或实时观看）时，SessionStack前端将不断从我们的服务器提取数据，以便为您无缝地创建缓冲式体验。为了给您一些背景知识 - 一旦您将SessionStack的库集成到您的Web应用程序中，它将不断收集诸如DOM更改，用户交互，网络请求，未处理的异常和调试消息等数据。
-
-当会话正在重播或实时流式传输时，SessionStack会提供所有数据，让您可以在视觉和技术上查看用户在自己的浏览器中体验到的所有内容。这一切都需要快速实现，因为我们不想让用户等待。
-
-由于数据是由我们的前端提取的，因此这是一个很好的地方，可以利用服务人员来处理重新加载我们的播放器和再次流式传输等情况。处理较慢的网络连接也非常重要。
-
-
-
+- 定期同步（未支持） - 提供管理定期后台同步功能的API。
+- Geofencing（未来支持） - 您可以定义参数，也称为围绕感兴趣区域的地理围栏。当设备跨越地理围栏时，Web应用程序会收到通知，这可以让您根据用户的地理位置提供有用的体验。
 
