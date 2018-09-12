@@ -25,6 +25,8 @@ export default class Tabs extends Component {
       });
     }
 
+    console.log(el.setNativeProps);
+
     const expanded = this.props.expanded;
 
     if (el.props.onSelect) {
@@ -107,13 +109,14 @@ export default class Tabs extends Component {
                     style: [
                       el.props.style,
                       this.props.selectedStyle,
-                      el.props.selectedStyle,
-                      expanded && (el.props.name || el.key) == active
-                        ? el.props.preSelectedColorStyle
-                        : {}
+                      el.props.selectedStyle
                     ]
                   })
-                : el}
+                : expanded & ((el.props.name || el.key) == active)
+                  ? React.cloneElement(el, {
+                      style: [el.props.preSelectedColorStyle]
+                    })
+                  : el}
             </TouchableOpacity>
           ))}
         </View>
