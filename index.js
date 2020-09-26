@@ -12,18 +12,12 @@ const Components = require('../util/Components');
 // Rule Definition
 // ------------------------------------------------------------------------------
 
-function mapTitle(methodName) {
-  const map = {
-    componentDidMount: 'did-mount',
-    componentDidUpdate: 'did-update',
-    componentWillUpdate: 'will-update',
-    componentWillUnmount: 'will-unmount'
-  };
-  const title = map[methodName];
-  if (!title) {
-    throw Error(`No docsUrl for '${methodName}'`);
-  }
-  return `no-${title}-set-state`;
+const allSubsAndUnsubs = {
+  on: 'off', // EventEmitter
+  subscribe: 'unsubscribe', // PubSub.js
+  addEventListener: 'removeEventListener', // EventTarget
+  addListener: 'removeListener', // EventEmitter
+  addListeners: 'removeListeners' // Custom
 }
 
 function makeNoMethodSetStateRule(methodName, shouldCheckUnsafeCb) {
@@ -43,8 +37,8 @@ function makeNoMethodSetStateRule(methodName, shouldCheckUnsafeCb) {
 
     create: Components.detect((context, components, utils) => {
       const mode = context.options[0] || 'allow-in-func';
-      let subCounts = 0;
-      let unsubCount = 0;
+
+      const map = new Map()
 
       let hasComponentDidMount = false
       let hasComponentWillUnmount = false
@@ -70,6 +64,9 @@ function makeNoMethodSetStateRule(methodName, shouldCheckUnsafeCb) {
         return name === 'componentWillUnmount'
       }
 
+      // 处理没有参数的 add + Listeners() remove + Listeners()
+
+
       // --------------------------------------------------------------------------
       // Public
       // --------------------------------------------------------------------------
@@ -80,7 +77,7 @@ function makeNoMethodSetStateRule(methodName, shouldCheckUnsafeCb) {
           if (
             callee.type !== 'MemberExpression'
             || callee.object.type !== 'ThisExpression'
-            || (callee.property.name !== 'setState' && callee.property.name !== 'unsetState')
+            || (callee.property.name !== 'on' && callee.property.name !== 'off')
           ) {
             return;
           }
@@ -101,25 +98,37 @@ function makeNoMethodSetStateRule(methodName, shouldCheckUnsafeCb) {
             }
             if (isComponentDidMount(ancestor.key.name)) {
               hasComponentDidMount = true
-              subCounts++
+              
+              const subs = map.get(callee.property.name) || []
+              subs.push(callee);
+              map.set(callee.property.name, subs)
             }
             if (isComponentWillUnmount(ancestor.key.name)) {
               hasComponentWillUnmount = true;
-              unsubCount++
+              
+              const ubsubs = map.get(callee.property.name) || []
+              ubsubs.push(callee);
+              map.set(callee.property.name, ubsubs)
             }
-            
-            if (hasComponentWillUnmount && hasComponentDidMount) return false;
-
-            context.report({
-              node: callee,
-              message: `Do not use setState in ${ancestor.key.name}`
-            });
-            return true;
           });
         },
         'Program:exit'() {
+          if (!hasComponentDidMount) return;
           
-          console.log(subCounts,unsubCount)
+          Object.keys(allSubsAndUnsubs).forEach(function(sub) {
+            const allSubs = map.get(sub) ? map.get(sub).length : 0;
+            const allUnsubs = map.get(allSubsAndUnsubs[sub]) ? map.get(allSubsAndUnsubs[sub]).length : 0;
+
+            if (allSubs > 0 && allSubs > allUnsubs) {
+              for (let i = allSubs - allUnsubs - 1; i < allSubs - 1; i++) {
+                context.report({
+                  node: map.get(sub)[i],
+                  message: `Should unsubscribe this event in componentWillUnmount`
+                })
+              }
+
+            }
+          })
         }
       };
     })
